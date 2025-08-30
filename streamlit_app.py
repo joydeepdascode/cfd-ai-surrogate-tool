@@ -8,7 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
-st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide", icon="🚀")
+st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide")
 
 # --- Global Sample Data for Demonstration ---
 SAMPLE_CSV_CONTENT = """angle_of_attack,reynolds_number,Cl,Cd,shape_name
