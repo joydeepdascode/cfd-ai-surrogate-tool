@@ -6,6 +6,7 @@ import io
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+from pandas.errors import EmptyDataError
 
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide")
@@ -149,6 +150,9 @@ def plot_airfoil(coords, angle_of_attack):
 
 # --- Model Training Function ---
 def train_and_evaluate_model(uploaded_file):
+    """
+    Trains a Random Forest Regressor model from an uploaded CSV file.
+    """
     if uploaded_file is None:
         st.error("Please upload a CSV file to train the model.")
         return None, "Please upload a CSV file to train the model.", None, None, []
@@ -156,6 +160,7 @@ def train_and_evaluate_model(uploaded_file):
     try:
         with st.spinner("Loading data and training model..."):
             data = pd.read_csv(uploaded_file)
+            
             required_columns = ['angle_of_attack', 'reynolds_number', 'Cl', 'Cd', 'shape_name']
             if not all(col in data.columns for col in required_columns):
                 missing = [col for col in required_columns if col not in data.columns]
@@ -163,15 +168,20 @@ def train_and_evaluate_model(uploaded_file):
                 return None, f"Error: Missing required columns in CSV: {', '.join(missing)}", None, None, []
             
             data_encoded = pd.get_dummies(data, columns=['shape_name'], prefix='shape')
+            
             feature_names = ['angle_of_attack', 'reynolds_number'] + [col for col in data_encoded.columns if 'shape_' in col]
             X = data_encoded[feature_names]
             y = data_encoded[['Cl', 'Cd']]
+            
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            
             model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
             model.fit(X_train, y_train)
+            
             y_pred = model.predict(X_test)
             rmse_cl = np.sqrt(mean_squared_error(y_test['Cl'], y_pred[:, 0]))
             rmse_cd = np.sqrt(mean_squared_error(y_test['Cd'], y_pred[:, 1]))
+            
             unique_shapes = data['shape_name'].unique().tolist()
             
             status_message = f"Model trained successfully! 🎉\n\n**Root Mean Squared Error (RMSE):**\n$C_l$: {rmse_cl:.4f}\n$C_d$: {rmse_cd:.4f}"
@@ -179,9 +189,12 @@ def train_and_evaluate_model(uploaded_file):
             
             return model, status_message, data, feature_names, unique_shapes
     
+    except EmptyDataError:
+        st.error("Error: The uploaded CSV file is empty or has no data to parse. Please check the file.")
+        return None, "Error: The uploaded CSV file is empty or has no data to parse.", None, None, []
     except Exception as e:
-        st.error(f"An error occurred during training: {e}")
-        return None, f"An error occurred during training: {e}", None, None, []
+        st.error(f"An unexpected error occurred during training: {e}")
+        return None, f"An unexpected error occurred during training: {e}", None, None, []
 
 # --- Main Streamlit UI ---
 st.title("🚀 AI Surrogate CFD Tool")
