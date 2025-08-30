@@ -3,9 +3,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.neural_network import MLPRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from pandas.errors import EmptyDataError
 
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
@@ -28,7 +30,6 @@ SAMPLE_CSV_CONTENT = """angle_of_attack,reynolds_number,Cl,Cd,shape_name
 """
 
 # --- Hard-coded Airfoil Coordinates for Demonstration ---
-# In a real app, this data would be loaded from .dat files.
 AIRFOIL_COORDS = {
     "NACA 4412": """1.0000 0.0000
 0.9500 0.0097
@@ -149,9 +150,9 @@ def plot_airfoil(coords, angle_of_attack):
     return fig
 
 # --- Model Training Function ---
-def train_and_evaluate_model(uploaded_file):
+def train_and_evaluate_model(uploaded_file, model_choice, hyperparameters):
     """
-    Trains a Random Forest Regressor model from an uploaded CSV file.
+    Trains a selected machine learning model from an uploaded CSV file.
     """
     if uploaded_file is None:
         st.error("Please upload a CSV file to train the model.")
@@ -175,17 +176,39 @@ def train_and_evaluate_model(uploaded_file):
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+            # --- Dynamically select and create the model ---
+            if model_choice == 'Random Forest':
+                model = RandomForestRegressor(random_state=42, n_jobs=-1, **hyperparameters)
+            elif model_choice == 'Gradient Boosting':
+                model = GradientBoostingRegressor(random_state=42, **hyperparameters)
+            elif model_choice == 'Support Vector Machine':
+                model = SVR(**hyperparameters)
+            elif model_choice == 'Neural Network (MLP)':
+                # MLP needs specific handling for multi-output regression
+                # This is a simplified example, a more robust solution is required for production
+                model = MLPRegressor(random_state=42, **hyperparameters)
+            
             model.fit(X_train, y_train)
             
             y_pred = model.predict(X_test)
             rmse_cl = np.sqrt(mean_squared_error(y_test['Cl'], y_pred[:, 0]))
             rmse_cd = np.sqrt(mean_squared_error(y_test['Cd'], y_pred[:, 1]))
+            r2_cl = r2_score(y_test['Cl'], y_pred[:, 0])
+            r2_cd = r2_score(y_test['Cd'], y_pred[:, 1])
             
             unique_shapes = data['shape_name'].unique().tolist()
             
-            status_message = f"Model trained successfully! 🎉\n\n**Root Mean Squared Error (RMSE):**\n$C_l$: {rmse_cl:.4f}\n$C_d$: {rmse_cd:.4f}"
-            st.success("Model trained successfully!")
+            status_message = f"""
+            Model trained successfully! 🎉
+            **Model:** {model_choice}
+            **Root Mean Squared Error (RMSE):**
+            $C_l$: {rmse_cl:.4f}
+            $C_d$: {rmse_cd:.4f}
+            **R-squared ($R^2$) Score:**
+            $C_l$: {r2_cl:.4f}
+            $C_d$: {r2_cd:.4f}
+            """
+            st.success("Model training complete!")
             
             return model, status_message, data, feature_names, unique_shapes
     
@@ -206,20 +229,13 @@ st.markdown("""
 st.info("💡 **Getting Started:** Upload your CSV data or load our sample data to train the model. Then, use the sliders and dropdown to make predictions!")
 
 # Initialize session state variables if they don't exist
-if "model" not in st.session_state:
-    st.session_state.model = None
-if "data" not in st.session_state:
-    st.session_state.data = None
-if "feature_names" not in st.session_state:
-    st.session_state.feature_names = None
-if "shapes" not in st.session_state:
-    st.session_state.shapes = []
-if "status_message" not in st.session_state:
-    st.session_state.status_message = ""
-if "sample_data_loaded" not in st.session_state:
-    st.session_state.sample_data_loaded = False
-if "uploaded_file_object" not in st.session_state:
-    st.session_state.uploaded_file_object = None
+if "model" not in st.session_state: st.session_state.model = None
+if "data" not in st.session_state: st.session_state.data = None
+if "feature_names" not in st.session_state: st.session_state.feature_names = None
+if "shapes" not in st.session_state: st.session_state.shapes = []
+if "status_message" not in st.session_state: st.session_state.status_message = ""
+if "sample_data_loaded" not in st.session_state: st.session_state.sample_data_loaded = False
+if "uploaded_file_object" not in st.session_state: st.session_state.uploaded_file_object = None
 
 # ----------------------------------------------------------------
 ## 1. Upload Data & Train Model
@@ -246,16 +262,47 @@ with col_sample:
         st.session_state.sample_data_loaded = True
         st.rerun()
 
+# --- Model Selection and Hyperparameters ---
+st.subheader("Model Selection & Hyperparameters")
+model_choice = st.selectbox(
+    "Select a Regression Model",
+    options=['Random Forest', 'Gradient Boosting', 'Support Vector Machine', 'Neural Network (MLP)'],
+    help="Choose the machine learning algorithm to train as the surrogate model."
+)
+
+hyperparameters = {}
+with st.expander("Adjust Model Hyperparameters"):
+    if model_choice == 'Random Forest':
+        n_estimators = st.slider('Number of Estimators', 10, 500, 100, 10)
+        max_depth = st.slider('Max Depth', 1, 30, None, 1)
+        hyperparameters = {'n_estimators': n_estimators, 'max_depth': max_depth}
+    elif model_choice == 'Gradient Boosting':
+        n_estimators = st.slider('Number of Estimators', 10, 500, 100, 10)
+        learning_rate = st.slider('Learning Rate', 0.01, 0.5, 0.1, 0.01)
+        max_depth = st.slider('Max Depth', 1, 10, 3, 1)
+        hyperparameters = {'n_estimators': n_estimators, 'learning_rate': learning_rate, 'max_depth': max_depth}
+    elif model_choice == 'Support Vector Machine':
+        C = st.slider('C (Regularization)', 0.1, 100.0, 1.0, 0.1)
+        epsilon = st.slider('Epsilon', 0.01, 1.0, 0.1, 0.01)
+        kernel = st.selectbox('Kernel', ['rbf', 'linear', 'poly'])
+        hyperparameters = {'C': C, 'epsilon': epsilon, 'kernel': kernel}
+    elif model_choice == 'Neural Network (MLP)':
+        hidden_layer_sizes = st.slider('Hidden Layers', 1, 10, 2, 1)
+        # Simplified to a single layer for demonstration
+        hyperparameters = {'hidden_layer_sizes': (hidden_layer_sizes,), 'max_iter': 500}
+        st.warning("Neural networks may require more data and careful tuning.")
+
+
 # The training button
 if st.button("✨ Train Model", type="primary", use_container_width=True):
     file_to_train = None
     if st.session_state.uploaded_file_object:
         file_to_train = st.session_state.uploaded_file_object
-    elif "sample_data_loaded" in st.session_state and st.session_state.sample_data_loaded:
+    elif st.session_state.sample_data_loaded:
         file_to_train = io.StringIO(SAMPLE_CSV_CONTENT)
 
     if file_to_train:
-        model, status, data, feature_names, shapes = train_and_evaluate_model(file_to_train)
+        model, status, data, feature_names, shapes = train_and_evaluate_model(file_to_train, model_choice, hyperparameters)
         st.session_state.model = model
         st.session_state.data = data
         st.session_state.feature_names = feature_names
@@ -342,14 +389,17 @@ with tab_predict:
             feature_names = st.session_state.feature_names
             
             input_df = pd.DataFrame([[angle_of_attack, reynolds_number, shape_name]],
-                                    columns=['angle_of_attack', 'reynolds_number', 'shape_name'])
+                                     columns=['angle_of_attack', 'reynolds_number', 'shape_name'])
             
             input_encoded = pd.get_dummies(input_df, columns=['shape_name'], prefix='shape')
             input_encoded = input_encoded.reindex(columns=feature_names, fill_value=0)
             
             prediction = model.predict(input_encoded)
-            cl_pred = prediction[0][0]
-            cd_pred = prediction[0][1]
+            # Handle multi-output for SVR and MLPRegressor
+            if model_choice in ['Support Vector Machine', 'Neural Network (MLP)']:
+                cl_pred, cd_pred = prediction[0]
+            else:
+                cl_pred, cd_pred = prediction[0][0], prediction[0][1]
             
             col_cl, col_cd = cl_output_container.columns(2)
             with col_cl:
