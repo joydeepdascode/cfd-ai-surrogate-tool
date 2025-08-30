@@ -66,9 +66,15 @@ The application uses a machine learning approach to **approximate** the results 
 
 -----
 
-## Usage
+## Sample Dataset
 
-1.  **Upload Data:** Upload your own CFD data in a CSV format. The file must contain the required headers: `angle_of_attack, reynolds_number, Cl, Cd, shape_name`. Alternatively, click the **`Load Sample Data 📊`** button to use the pre-loaded dataset.
-2.  **Train Model:** Click the **`✨ Train Model`** button. The app will train the machine learning model and display its performance metrics (RMSE).
-3.  **Make Predictions:** Use the interactive sliders and the dropdown menu to select a new **Angle of Attack**, **Reynolds Number**, and **Airfoil Name**.
-4.  **Visualize:** Click **`🔍 Predict Coefficients`** to see the predicted $C\_l$ and $C\_d$ values and a plot showing how the prediction compares to the original training data. The airfoil visualization will also update dynamically as you move the sliders.
+The application includes a built-in sample dataset for demonstration purposes. This dataset is a small CSV string containing CFD results for three different airfoil shapes (NACA 4412, NACA 0012, and Eppler 423) at various angles of attack.
+
+| angle\_of\_attack | reynolds\_number | Cl | Cd | shape\_name |
+| :--- | :--- | :--- | :--- | :--- |
+| 0 | 300000 | 0.45 | 0.007 | NACA 4412 |
+| 2 | 300000 | 0.65 | 0.008 | NACA 4412 |
+| 4 | 300000 | 0.85 | 0.012 | NACA 4412 |
+| ... | ... | ... | ... | ... |
+
+You can use this data by clicking the "Load Sample Data" button in the app's user interface. This is a great way to explore the app's functionality before uploading your own data.
