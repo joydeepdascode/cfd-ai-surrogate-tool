@@ -8,7 +8,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
-# 'icon' parameter removed for compatibility with older Streamlit versions
 st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide")
 
 # --- Global Sample Data for Demonstration ---
@@ -27,11 +26,129 @@ SAMPLE_CSV_CONTENT = """angle_of_attack,reynolds_number,Cl,Cd,shape_name
 6,300000,1.1,0.012,Eppler 423
 """
 
+# --- Hard-coded Airfoil Coordinates for Demonstration ---
+# In a real app, this data would be loaded from .dat files.
+AIRFOIL_COORDS = {
+    "NACA 4412": """1.0000 0.0000
+0.9500 0.0097
+0.9000 0.0195
+0.8500 0.0292
+0.8000 0.0388
+0.7500 0.0483
+0.7000 0.0575
+0.6000 0.0754
+0.5000 0.0911
+0.4000 0.1044
+0.3000 0.1147
+0.2000 0.1213
+0.1000 0.1232
+0.0000 0.1189
+-0.1000 0.1069
+-0.2000 0.0886
+-0.3000 0.0657
+-0.4000 0.0392
+-0.5000 0.0102
+-0.6000 -0.0198
+-0.7000 -0.0514
+-0.8000 -0.0838
+-0.9000 -0.1167
+-1.0000 -0.1500""",
+    "NACA 0012": """1.0000 0.0000
+0.9500 0.0060
+0.9000 0.0085
+0.8500 0.0104
+0.8000 0.0120
+0.7500 0.0134
+0.7000 0.0145
+0.6000 0.0163
+0.5000 0.0175
+0.4000 0.0182
+0.3000 0.0185
+0.2000 0.0182
+0.1000 0.0172
+0.0000 0.0152
+-0.1000 0.0123
+-0.2000 0.0085
+-0.3000 0.0040
+-0.4000 -0.0008
+-0.5000 -0.0062
+-0.6000 -0.0123
+-0.7000 -0.0190
+-0.8000 -0.0264
+-0.9000 -0.0345
+-1.0000 -0.0434""",
+    "Eppler 423": """1.0000 0.0000
+0.9500 0.0120
+0.9000 0.0200
+0.8500 0.0260
+0.8000 0.0310
+0.7500 0.0350
+0.7000 0.0380
+0.6000 0.0420
+0.5000 0.0450
+0.4000 0.0460
+0.3000 0.0450
+0.2000 0.0420
+0.1000 0.0360
+0.0000 0.0280
+-0.1000 0.0180
+-0.2000 0.0060
+-0.3000 -0.0080
+-0.4000 -0.0240
+-0.5000 -0.0410
+-0.6000 -0.0600
+-0.7000 -0.0810
+-0.8000 -0.1030
+-0.9000 -0.1260
+-1.0000 -0.1500"""
+}
+
+def get_airfoil_coords(shape_name):
+    """Parses hard-coded airfoil coordinate string into a NumPy array."""
+    if shape_name not in AIRFOIL_COORDS:
+        return None
+    coords = AIRFOIL_COORDS[shape_name]
+    lines = coords.strip().split('\n')
+    data = [list(map(float, line.split())) for line in lines]
+    return np.array(data)
+
+def plot_airfoil(coords, angle_of_attack):
+    """Plots a single airfoil, rotated by a given angle of attack."""
+    if coords is None:
+        return None
+    
+    # Convert angle to radians for trigonometric functions
+    angle_rad = np.deg2rad(angle_of_attack)
+    
+    # Create a 2D rotation matrix
+    rotation_matrix = np.array([
+        [np.cos(angle_rad), -np.sin(angle_rad)],
+        [np.sin(angle_rad), np.cos(angle_rad)]
+    ])
+    
+    # Apply rotation to the coordinates
+    rotated_coords = np.dot(coords, rotation_matrix)
+    
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(rotated_coords[:, 0], rotated_coords[:, 1], color='black')
+    
+    ax.set_title(f'Airfoil at {angle_of_attack}° Angle of Attack')
+    ax.set_xlabel('X/c')
+    ax.set_ylabel('Y/c')
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlim(-0.2, 1.2)
+    ax.set_ylim(-0.3, 0.3)
+    ax.grid(True, linestyle='--', alpha=0.6)
+    
+    # Draw a line representing the freestream flow direction
+    ax.arrow(0.0, 0.0, 1.0, 0.0, head_width=0.03, head_length=0.05, fc='blue', ec='blue', lw=1, zorder=3)
+    ax.text(0.5, -0.1, "Freestream Flow", color='blue', ha='center', va='top')
+    
+    plt.tight_layout()
+    return fig
+
 # --- Model Training Function ---
 def train_and_evaluate_model(uploaded_file):
-    """
-    Trains a Random Forest Regressor model from an uploaded CSV file.
-    """
     if uploaded_file is None:
         st.error("Please upload a CSV file to train the model.")
         return None, "Please upload a CSV file to train the model.", None, None, []
@@ -39,7 +156,6 @@ def train_and_evaluate_model(uploaded_file):
     try:
         with st.spinner("Loading data and training model..."):
             data = pd.read_csv(uploaded_file)
-            
             required_columns = ['angle_of_attack', 'reynolds_number', 'Cl', 'Cd', 'shape_name']
             if not all(col in data.columns for col in required_columns):
                 missing = [col for col in required_columns if col not in data.columns]
@@ -47,20 +163,15 @@ def train_and_evaluate_model(uploaded_file):
                 return None, f"Error: Missing required columns in CSV: {', '.join(missing)}", None, None, []
             
             data_encoded = pd.get_dummies(data, columns=['shape_name'], prefix='shape')
-            
             feature_names = ['angle_of_attack', 'reynolds_number'] + [col for col in data_encoded.columns if 'shape_' in col]
             X = data_encoded[feature_names]
             y = data_encoded[['Cl', 'Cd']]
-            
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            
             model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
             model.fit(X_train, y_train)
-            
             y_pred = model.predict(X_test)
             rmse_cl = np.sqrt(mean_squared_error(y_test['Cl'], y_pred[:, 0]))
             rmse_cd = np.sqrt(mean_squared_error(y_test['Cd'], y_pred[:, 1]))
-            
             unique_shapes = data['shape_name'].unique().tolist()
             
             status_message = f"Model trained successfully! 🎉\n\n**Root Mean Squared Error (RMSE):**\n$C_l$: {rmse_cl:.4f}\n$C_d$: {rmse_cd:.4f}"
@@ -195,6 +306,17 @@ with tab_predict:
         predict_button = st.button("🔍 Predict Coefficients", type="secondary", use_container_width=True, disabled=not interactive)
 
     with col_output:
+        st.subheader("Airfoil Visualization")
+        
+        # Get airfoil coordinates and plot dynamically
+        coords = get_airfoil_coords(shape_name)
+        if coords is not None:
+            airfoil_fig = plot_airfoil(coords, angle_of_attack)
+            st.pyplot(airfoil_fig)
+            plt.close(airfoil_fig)
+        else:
+            st.warning("Airfoil geometry data not available for this shape.")
+            
         st.subheader("Predicted Results")
         
         cl_output_container = st.empty()
