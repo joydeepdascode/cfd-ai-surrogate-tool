@@ -129,7 +129,7 @@ def plot_airfoil(coords, angle_of_attack):
     ])
     
     # Apply rotation to the coordinates
-    rotated_coords = np.dot(coords, rotation_matrix)
+    rotated_coords = np.dot(coords, rotation_matrix.T) # Fix: use rotation_matrix.T
     
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(rotated_coords[:, 0], rotated_coords[:, 1], color='black')
@@ -176,21 +176,36 @@ def train_and_evaluate_model(uploaded_file, model_choice, hyperparameters):
             
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            # --- Dynamically select and create the model ---
+            model = None
             if model_choice == 'Random Forest':
+                # Random Forest can handle multi-output regression natively
                 model = RandomForestRegressor(random_state=42, n_jobs=-1, **hyperparameters)
-            elif model_choice == 'Gradient Boosting':
-                model = GradientBoostingRegressor(random_state=42, **hyperparameters)
-            elif model_choice == 'Support Vector Machine':
-                model = SVR(**hyperparameters)
-            elif model_choice == 'Neural Network (MLP)':
-                # MLP needs specific handling for multi-output regression
-                # This is a simplified example, a more robust solution is required for production
-                model = MLPRegressor(random_state=42, **hyperparameters)
-            
-            model.fit(X_train, y_train)
-            
-            y_pred = model.predict(X_test)
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
+            else:
+                # Other models are single-output and need two separate models
+                if model_choice == 'Gradient Boosting':
+                    model_cl = GradientBoostingRegressor(random_state=42, **hyperparameters)
+                    model_cd = GradientBoostingRegressor(random_state=42, **hyperparameters)
+                elif model_choice == 'Support Vector Machine':
+                    model_cl = SVR(**hyperparameters)
+                    model_cd = SVR(**hyperparameters)
+                elif model_choice == 'Neural Network (MLP)':
+                    model_cl = MLPRegressor(random_state=42, **hyperparameters)
+                    model_cd = MLPRegressor(random_state=42, **hyperparameters)
+                
+                # Fit each model to its respective target variable
+                model_cl.fit(X_train, y_train['Cl'])
+                model_cd.fit(X_train, y_train['Cd'])
+                
+                # Predict with each model and stack the results
+                y_pred_cl = model_cl.predict(X_test)
+                y_pred_cd = model_cd.predict(X_test)
+                y_pred = np.column_stack((y_pred_cl, y_pred_cd))
+                
+                # Store both models in a dictionary for prediction later
+                model = {'Cl': model_cl, 'Cd': model_cd}
+
             rmse_cl = np.sqrt(mean_squared_error(y_test['Cl'], y_pred[:, 0]))
             rmse_cd = np.sqrt(mean_squared_error(y_test['Cd'], y_pred[:, 1]))
             r2_cl = r2_score(y_test['Cl'], y_pred[:, 0])
@@ -394,12 +409,14 @@ with tab_predict:
             input_encoded = pd.get_dummies(input_df, columns=['shape_name'], prefix='shape')
             input_encoded = input_encoded.reindex(columns=feature_names, fill_value=0)
             
-            prediction = model.predict(input_encoded)
-            # Handle multi-output for SVR and MLPRegressor
-            if model_choice in ['Support Vector Machine', 'Neural Network (MLP)']:
-                cl_pred, cd_pred = prediction[0]
+            # Use the correct prediction logic based on the model type
+            if isinstance(model, dict):
+                cl_pred = model['Cl'].predict(input_encoded)[0]
+                cd_pred = model['Cd'].predict(input_encoded)[0]
             else:
-                cl_pred, cd_pred = prediction[0][0], prediction[0][1]
+                prediction = model.predict(input_encoded)
+                cl_pred = prediction[0][0]
+                cd_pred = prediction[0][1]
             
             col_cl, col_cd = cl_output_container.columns(2)
             with col_cl:
@@ -433,9 +450,13 @@ with tab_predict:
 with tab_info:
     st.markdown("""
         #### How Predictions Work
-        After training the Random Forest Regressor model on your provided CFD data, 
+        After training the machine learning model on your provided CFD data, 
         this tool uses the trained model to predict the Lift and Drag Coefficients 
         ($C_l$ and $C_d$) for new input parameters (Angle of Attack, Reynolds Number, and Airfoil Shape).
+        
+        For models like **Random Forest**, a single model is trained to predict both $C_l$ and $C_d$ simultaneously.
+        
+        For models like **Gradient Boosting**, **SVR**, and **MLP**, two separate models are trained: one for $C_l$ and one for $C_d$. The predictions are then combined.
         
         The model uses **one-hot encoding** internally to handle different airfoil shapes.
         
