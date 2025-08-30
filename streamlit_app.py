@@ -3,10 +3,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
-import os
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+
+# --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
+st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide", icon="🚀")
 
 # --- Global Sample Data for Demonstration ---
 SAMPLE_CSV_CONTENT = """angle_of_attack,reynolds_number,Cl,Cd,shape_name
@@ -24,9 +26,11 @@ SAMPLE_CSV_CONTENT = """angle_of_attack,reynolds_number,Cl,Cd,shape_name
 6,300000,1.1,0.012,Eppler 423
 """
 
-# --- Model Training Function (NO LOGIC CHANGES) ---
-# The logic within this function remains identical to your original
+# --- Model Training Function ---
 def train_and_evaluate_model(uploaded_file):
+    """
+    Trains a Random Forest Regressor model from an uploaded CSV file.
+    """
     if uploaded_file is None:
         st.error("Please upload a CSV file to train the model.")
         return None, "Please upload a CSV file to train the model.", None, None, []
@@ -59,7 +63,7 @@ def train_and_evaluate_model(uploaded_file):
             unique_shapes = data['shape_name'].unique().tolist()
             
             status_message = f"Model trained successfully! 🎉\n\n**Root Mean Squared Error (RMSE):**\n$C_l$: {rmse_cl:.4f}\n$C_d$: {rmse_cd:.4f}"
-            st.success("Model trained successfully!") # Keep this for immediate feedback
+            st.success("Model trained successfully!")
             
             return model, status_message, data, feature_names, unique_shapes
     
@@ -67,10 +71,7 @@ def train_and_evaluate_model(uploaded_file):
         st.error(f"An error occurred during training: {e}")
         return None, f"An error occurred during training: {e}", None, None, []
 
-# --- Streamlit UI (DESIGN CHANGES ONLY) ---
-
-st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide", icon="🚀")
-
+# --- Main Streamlit UI ---
 st.title("🚀 AI Surrogate CFD Tool")
 st.markdown("""
     This application utilizes **Machine Learning** to create a surrogate model for Computational Fluid Dynamics (CFD) data. 
@@ -92,17 +93,17 @@ if "status_message" not in st.session_state:
     st.session_state.status_message = ""
 if "sample_data_loaded" not in st.session_state:
     st.session_state.sample_data_loaded = False
-if "uploaded_file_object" not in st.session_state: # Renamed for clarity, stores the actual file object if loaded
+if "uploaded_file_object" not in st.session_state:
     st.session_state.uploaded_file_object = None
 
-# --- Section 1: Data Upload & Model Training ---
+# ----------------------------------------------------------------
+## 1. Upload Data & Train Model
+
 st.header("1. Upload Data & Train Model", divider="blue")
 
 col_upload, col_sample = st.columns([3, 1])
 
 with col_upload:
-    # Use a more descriptive key for st.file_uploader if needed, but 'uploaded_file' is fine.
-    # We store the actual file object in session state to persist it.
     uploaded_file_content = st.file_uploader(
         "Upload a CSV file with CFD data", 
         type="csv",
@@ -110,7 +111,7 @@ with col_upload:
     )
     if uploaded_file_content:
         st.session_state.uploaded_file_object = uploaded_file_content
-        st.session_state.sample_data_loaded = False # Reset if new file is uploaded
+        st.session_state.sample_data_loaded = False
 
 with col_sample:
     st.markdown("##### Or try with sample data:")
@@ -118,17 +119,15 @@ with col_sample:
         csv_file_io = io.StringIO(SAMPLE_CSV_CONTENT)
         st.session_state.uploaded_file_object = csv_file_io
         st.session_state.sample_data_loaded = True
-        st.rerun() # Rerun to ensure the file_uploader visually updates if possible (though it generally won't pre-fill)
+        st.rerun()
 
 # The training button
 if st.button("✨ Train Model", type="primary", use_container_width=True):
-    # Determine which file to use for training
     file_to_train = None
     if st.session_state.uploaded_file_object:
         file_to_train = st.session_state.uploaded_file_object
     elif "sample_data_loaded" in st.session_state and st.session_state.sample_data_loaded:
-        # If sample data was loaded and no new file uploaded, use the sample data
-        file_to_train = io.StringIO(SAMPLE_CSV_CONTENT) # Re-create StringIO as it's consumed on read
+        file_to_train = io.StringIO(SAMPLE_CSV_CONTENT)
 
     if file_to_train:
         model, status, data, feature_names, shapes = train_and_evaluate_model(file_to_train)
@@ -140,7 +139,7 @@ if st.button("✨ Train Model", type="primary", use_container_width=True):
     else:
         st.warning("Please upload a CSV file or load sample data before training.")
 
-# Display training status with an expander for details
+# Display training status
 if st.session_state.status_message:
     st.subheader("Training Results")
     if "Error" in st.session_state.status_message:
@@ -150,12 +149,13 @@ if st.session_state.status_message:
         with st.expander("View Training Details"):
             st.markdown(st.session_state.status_message)
 
-st.markdown("---") # Visually separate sections
+st.divider()
 
-# --- Section 2: CFD Predictor ---
+# ----------------------------------------------------------------
+## 2. CFD Predictor
+
 st.header("2. CFD Predictor", divider="green")
 
-# Use st.tabs for better organization if prediction inputs/outputs grow
 tab_predict, tab_info = st.tabs(["Make Prediction", "Prediction Info"])
 
 with tab_predict:
@@ -163,7 +163,6 @@ with tab_predict:
 
     with col_input:
         st.subheader("Input Parameters")
-        # Use st.session_state.model to control interactivity
         interactive = st.session_state.model is not None
         
         if not interactive:
@@ -182,7 +181,6 @@ with tab_predict:
             help="A dimensionless quantity used to predict flow patterns."
         )
         
-        # Use a selectbox for shapes. The options come from the trained data.
         if st.session_state.shapes:
             shape_name = st.selectbox(
                 "Airfoil Name", 
@@ -198,41 +196,34 @@ with tab_predict:
     with col_output:
         st.subheader("Predicted Results")
         
-        # Placeholders for dynamic updates
         cl_output_container = st.empty()
         cd_output_container = st.empty()
         plot_output_container = st.empty()
 
-        # Prediction logic is now an event handler for the button click
         if predict_button and st.session_state.model:
             model = st.session_state.model
             data = st.session_state.data
             feature_names = st.session_state.feature_names
             
-            # Create input DataFrame and align columns (NO LOGIC CHANGE)
             input_df = pd.DataFrame([[angle_of_attack, reynolds_number, shape_name]],
                                     columns=['angle_of_attack', 'reynolds_number', 'shape_name'])
             
             input_encoded = pd.get_dummies(input_df, columns=['shape_name'], prefix='shape')
             input_encoded = input_encoded.reindex(columns=feature_names, fill_value=0)
             
-            # Make prediction (NO LOGIC CHANGE)
             prediction = model.predict(input_encoded)
             cl_pred = prediction[0][0]
             cd_pred = prediction[0][1]
             
-            # Display predictions using st.metric for a cleaner look
             col_cl, col_cd = cl_output_container.columns(2)
             with col_cl:
                 st.metric(label="Lift Coefficient ($C_l$)", value=f"{cl_pred:.4f}")
             with col_cd:
                 st.metric(label="Drag Coefficient ($C_d$)", value=f"{cd_pred:.4f}")
             
-            # Generate and display plot (NO LOGIC CHANGE)
             fig, axs = plt.subplots(1, 2, figsize=(15, 6))
             shape_data = data[data['shape_name'] == shape_name]
             
-            # Plot Lift Coefficient
             axs[0].scatter(shape_data['angle_of_attack'], shape_data['Cl'], alpha=0.5, label='Training Data')
             axs[0].scatter([angle_of_attack], [cl_pred], color='red', s=100, label='Prediction')
             axs[0].set_title(f'Lift Coefficient ($C_l$) Prediction for {shape_name}')
@@ -241,7 +232,6 @@ with tab_predict:
             axs[0].legend()
             axs[0].grid(True)
 
-            # Plot Drag Coefficient
             axs[1].scatter(shape_data['angle_of_attack'], shape_data['Cd'], alpha=0.5, label='Training Data')
             axs[1].scatter([angle_of_attack], [cd_pred], color='red', s=100, label='Prediction')
             axs[1].set_title(f'Drag Coefficient ($C_d$) Prediction for {shape_name}')
@@ -252,7 +242,7 @@ with tab_predict:
             
             plt.tight_layout()
             plot_output_container.pyplot(fig)
-            plt.close(fig) # Close the figure to free up memory
+            plt.close(fig)
 
 with tab_info:
     st.markdown("""
@@ -271,6 +261,5 @@ with tab_info:
         This helps in understanding how the prediction fits within the known data range.
     """)
 
-# Footer for context
-st.markdown("---")
+st.divider()
 st.caption(f"App developed for AI Surrogate CFD Tool. Current location: Kolkata, West Bengal, India. © 2025")
