@@ -1,4 +1,4 @@
-# AI Surrogate CFD Tool 🚀
+# AI Surrogate CFD Tool
 
 This is a Streamlit application that serves as an AI-powered surrogate model for Computational Fluid Dynamics (CFD) simulations. By training a **Random Forest Regressor** on historical CFD data, the app can quickly predict the Lift ($C\_l$) and Drag ($C\_d$) coefficients for new input parameters, eliminating the need for time-consuming and computationally expensive full-scale simulations.
 
