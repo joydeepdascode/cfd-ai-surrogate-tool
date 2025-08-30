@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 
 # --- Page Configuration (MUST BE THE FIRST STREAMLIT COMMAND) ---
+# 'icon' parameter removed for compatibility with older Streamlit versions
 st.set_page_config(page_title="AI Surrogate CFD Tool", layout="wide")
 
 # --- Global Sample Data for Demonstration ---
